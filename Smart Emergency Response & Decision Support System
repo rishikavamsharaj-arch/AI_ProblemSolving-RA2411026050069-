@@ -1,1 +1,153 @@
+import streamlit as st
+import numpy as np
+import heapq
+from sklearn.ensemble import RandomForestClassifier
 
+st.set_page_config(page_title="Smart City Emergency System", layout="wide")
+
+@st.cache_resource
+def load_ml_model():
+    X = [[1, 2, 5], [2, 5, 10], [3, 9, 2], [1, 1, 30], [2, 8, 5], [3, 10, 15]]
+    y = [1, 2, 3, 1, 3, 3] 
+    
+    clf = RandomForestClassifier(n_estimators=10, random_state=42)
+    clf.fit(X, y)
+    return clf
+
+ml_model = load_ml_model()
+
+def predict_severity(injury_type, location_risk, time_delay):
+    inj_map = {"Minor": 1, "Severe": 2, "Fatal": 3}
+    features = [[inj_map[injury_type], location_risk, time_delay]]
+    pred = ml_model.predict(features)[0]
+    return {1: "Low", 2: "Medium", 3: "High"}[pred]
+
+def rule_based_priority(predicted_severity, availability):
+    if predicted_severity == "High" and availability < 5:
+        return "Critical (Code Red)"
+    elif predicted_severity == "High" or (predicted_severity == "Medium" and availability < 3):
+        return "High Priority"
+    elif predicted_severity == "Medium":
+        return "Medium Priority"
+    else:
+        return "Low Priority (Standard Response)"
+
+def csp_resource_allocation(priority):
+    ambulances = {
+        "Unit 1": {"type": "Basic Life Support", "available": True},
+        "Unit 2": {"type": "Advanced Life Support", "available": False},
+        "Unit 3": {"type": "Advanced Life Support", "available": True},
+        "Unit 4": {"type": "Rescue Helicopter", "available": True}
+    }
+    
+    for unit, details in ambulances.items():
+        if not details["available"]: continue
+        
+        if priority == "Critical (Code Red)" and details["type"] in ["Advanced Life Support", "Rescue Helicopter"]:
+            return f"{unit} ({details['type']})"
+        elif priority == "High Priority" and details["type"] == "Advanced Life Support":
+            return f"{unit} ({details['type']})"
+        elif priority in ["Medium Priority", "Low Priority (Standard Response)"]:
+            return f"{unit} ({details['type']})"
+            
+    return "No suitable units available. Dispatching standard police unit."
+
+def a_star_route(start, goal):
+    grid = np.array([
+        [0, 0, 0, 1, 0],
+        [0, 1, 0, 1, 0],
+        [0, 1, 0, 0, 0],
+        [0, 0, 0, 1, 0],
+        [1, 1, 0, 0, 0]
+    ])
+    
+    def heuristic(a, b): return abs(a[0] - b[0]) + abs(a[1] - b[1])
+    
+    neighbors = [(0,1),(0,-1),(1,0),(-1,0)]
+    close_set, came_from = set(), {}
+    gscore, fscore = {start:0}, {start:heuristic(start, goal)}
+    oheap = []
+    heapq.heappush(oheap, (fscore[start], start))
+
+    while oheap:
+        current = heapq.heappop(oheap)[1]
+        if current == goal:
+            data = []
+            while current in came_from:
+                data.append(current)
+                current = came_from[current]
+            data.append(start)
+            return data[::-1]
+
+        close_set.add(current)
+        for i, j in neighbors:
+            neighbor = current[0] + i, current[1] + j
+            if 0 <= neighbor[0] < grid.shape[0] and 0 <= neighbor[1] < grid.shape[1]:
+                if grid[neighbor[0]][neighbor[1]] == 1: continue
+            else: continue
+            
+            tentative_g_score = gscore[current] + 1
+            if neighbor in close_set and tentative_g_score >= gscore.get(neighbor, 0): continue
+            
+            if tentative_g_score < gscore.get(neighbor, 0) or neighbor not in [i[1] for i in oheap]:
+                came_from[neighbor] = current
+                gscore[neighbor] = tentative_g_score
+                fscore[neighbor] = tentative_g_score + heuristic(neighbor, goal)
+                heapq.heappush(oheap, (fscore[neighbor], neighbor))
+    return None
+
+def means_ends_analysis(priority):
+    plan = ["Step 1: Emergency Detected by City Sensors"]
+    
+    if "Critical" in priority:
+        plan.append("Step 2: Pre-emptively clear traffic lights on target route.")
+        plan.append("Step 3: Dispatch Advanced Life Support / Aerial Support.")
+        plan.append("Step 4: Immediate extraction and trauma care.")
+    else:
+        plan.append("Step 2: Dispatch available ground unit.")
+        plan.append("Step 3: On-site assessment by EMTs.")
+        
+    plan.append("Step 5: Transport victim to nearest available hospital.")
+    plan.append("Step 6: Mission Complete. Resource back to standby.")
+    return plan
+
+st.title("🚨 Smart City Emergency Decision System")
+st.markdown("Integrates ML, Rule-Based Logic, CSP, A* Search, and Means-Ends Analysis.")
+
+st.sidebar.header("Emergency Input Data")
+inj_type = st.sidebar.selectbox("Injury Type (Features)", ["Minor", "Severe", "Fatal"])
+loc_risk = st.sidebar.slider("Location Risk Level", 1, 10, 5)
+time_delay = st.sidebar.number_input("Time Delay (mins)", 0, 60, 5)
+avail_units = st.sidebar.slider("Total City Units Available", 0, 10, 4)
+
+start_x = st.sidebar.number_input("Responder X (0-4)", 0, 4, 0)
+start_y = st.sidebar.number_input("Responder Y (0-4)", 0, 4, 0)
+goal_x = st.sidebar.number_input("Emergency X (0-4)", 0, 4, 4)
+goal_y = st.sidebar.number_input("Emergency Y (0-4)", 0, 4, 4)
+
+if st.sidebar.button("Process Emergency"):
+    predicted_sev = predict_severity(inj_type, loc_risk, time_delay)
+    final_priority = rule_based_priority(predicted_sev, avail_units)
+    assigned_unit = csp_resource_allocation(final_priority)
+    route = a_star_route((start_x, start_y), (goal_x, goal_y))
+    action_plan = means_ends_analysis(final_priority)
+
+    st.header("Final Output:")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.success(f"**Predicted Severity (ML Model):** {predicted_sev}")
+        st.error(f"**Priority Level (Rule-Based):** {final_priority}")
+        st.info(f"**Assigned Rescue Unit (CSP):** {assigned_unit}")
+        
+    with col2:
+        if route:
+            st.warning(f"**Optimal Route (A* Search):** {route}")
+        else:
+            st.error("**Optimal Route (A* Search):** No valid route found! Roadblocks detected.")
+            
+    st.markdown("### Step-by-Step Action Plan (Means-Ends Analysis)")
+    for step in action_plan:
+        st.markdown(f"- {step}")
+else:
+    st.info("Enter the emergency parameters in the sidebar and click 'Process Emergency'.")
