@@ -1,6 +1,6 @@
 # AI_ProblemSolving_<RA2411026050058>
 
-Team Members: 1. vamsharaj Rishika / RA2411026050058]
+Team Members: 1. [vamsharaj Rishika / RA2411026050069]
 2. [Sree Lakshmi / RA2411026050058]
 
 Interactive Website Link: [streamlit run "smart emergency response and decision support system.py"]
